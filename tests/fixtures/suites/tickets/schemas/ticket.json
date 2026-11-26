@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "required": ["categoria", "prioridad", "resumen"],
+  "properties": {
+    "categoria": { "enum": ["cuenta", "facturacion", "bug", "otro"] },
+    "prioridad": { "enum": ["alta", "media", "baja"] },
+    "resumen": { "type": "string" }
+  }
+}

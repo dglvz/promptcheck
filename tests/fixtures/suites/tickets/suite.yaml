@@ -1,0 +1,44 @@
+# Fixture basado en el ejemplo de la sección 6 de la propuesta.
+name: Clasificación de tickets de soporte
+description: Clasifica tickets en categoría y prioridad.
+
+models:
+  - id: claude-opus-5-5
+    effort: medium
+  - claude-haiku-5-5
+
+defaults:
+  max_tokens: 1024
+  trials: 3
+  cache_system: true
+
+prompt:
+  system: file://prompts/clasificador.md
+  user: "Ticket del cliente:\n{{texto}}"
+
+judge:
+  model: claude-opus-5-5
+  effort: low
+
+cases:
+  - id: correo-reset
+    vars: { texto: "No me llega el correo para cambiar la contraseña" }
+    expect:
+      - type: json_schema
+        schema: file://schemas/ticket.json
+      - type: json_path_equals
+        path: categoria
+        value: cuenta
+
+  - id: app-se-cierra
+    vars: { texto: "La app se cierra al abrir el escáner" }
+    expect:
+      - type: json_path_equals
+        path: categoria
+        value: bug
+      - type: llm_judge
+        rubric: "La prioridad es 'alta' o 'media' y el resumen menciona el escáner."
+
+thresholds:
+  pass_rate: 0.9
+  max_regression: 0.05

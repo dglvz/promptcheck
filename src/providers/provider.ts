@@ -60,6 +60,7 @@ export type ProviderErrorKind =
   | "connection"
   | "authentication"
   | "permission"
+  | "billing"
   | "bad_request"
   | "not_found"
   | "unknown";
@@ -68,6 +69,7 @@ export type ProviderErrorKind =
 const FATAL_KINDS: ReadonlySet<ProviderErrorKind> = new Set([
   "authentication",
   "permission",
+  "billing",
   "bad_request",
   "not_found",
 ]);

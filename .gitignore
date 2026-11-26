@@ -1,0 +1,22 @@
+# Dependencias y build
+node_modules/
+dist/
+coverage/
+
+# Secretos
+.env
+.env.*
+!.env.example
+
+# Datos locales de promptcheck (caché y corridas)
+.promptcheck/
+
+# Propuesta interna (no se publica)
+docs/*.pdf
+
+# Sistema / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

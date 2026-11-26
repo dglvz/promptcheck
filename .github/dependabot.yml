@@ -12,6 +12,14 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      # typescript-eslint todavía no soporta TypeScript 7 (peer: typescript <6.1).
+      # Quitar esta regla cuando lo soporte.
+      - dependency-name: typescript
+        versions: [">=7"]
+      # @types/node sigue la versión mayor de Node del proyecto (engines y .nvmrc: 24).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

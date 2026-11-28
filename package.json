@@ -1,6 +1,6 @@
 {
   "name": "promptcheck",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Mini framework para evaluar prompts de Claude como pruebas unitarias: suites YAML, comparación de modelos, costos y regresiones en CI.",
   "keywords": [
     "claude",

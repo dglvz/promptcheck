@@ -97,6 +97,7 @@ describe("runTrials con prompt caching", () => {
         id: `c/${model}/${i + 1}`,
         caseId: "c",
         model: { id: model },
+        modelLabel: model,
         trial: i + 1,
         request: { model, system: SYSTEM, user: `p${i}`, maxTokens: 50, cacheSystem: true },
         assertions: [],

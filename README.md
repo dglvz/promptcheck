@@ -41,15 +41,27 @@ thresholds:
   pass_rate: 0.9
 ```
 
+### Matriz de modelos
+
+Cada caso corre contra cada modelo de `models`, `trials` veces. Un modelo con `effort` se identifica como `id@effort` en los trials y en el reporte, así que se puede comparar el mismo modelo con distintos esfuerzos:
+
+```yaml
+models:
+  - { id: claude-haiku-5-5, effort: low }
+  - { id: claude-haiku-5-5, effort: high }
+```
+
+Con más de un modelo, el reporte agrega la matriz caso × modelo (`3/3 ✔`, `1/3 ~` inestable, `0/3 ✘`). `--model claude-haiku-5-5` elige todas las variantes de ese id; `--model claude-haiku-5-5@high`, solo esa.
+
 ### Flags de `run`
 
-| Flag                | Qué hace                                                  |
-| ------------------- | --------------------------------------------------------- |
-| `-m, --model <ids>` | Solo estos modelos (repetible o separados por comas)      |
-| `-c, --case <ids>`  | Solo estos casos (repetible o separados por comas)        |
-| `-t, --trials <n>`  | Repeticiones por caso y modelo (reemplaza la de la suite) |
-| `--concurrency <n>` | Llamadas simultáneas a la API (por defecto 4)             |
-| `--no-color`        | Salida sin colores                                        |
+| Flag                | Qué hace                                                                   |
+| ------------------- | -------------------------------------------------------------------------- |
+| `-m, --model <ids>` | Solo estos modelos, por id o `id@effort` (repetible o separados por comas) |
+| `-c, --case <ids>`  | Solo estos casos (repetible o separados por comas)                         |
+| `-t, --trials <n>`  | Repeticiones por caso y modelo (reemplaza la de la suite)                  |
+| `--concurrency <n>` | Llamadas simultáneas a la API (por defecto 4)                              |
+| `--no-color`        | Salida sin colores                                                         |
 
 ### Aserciones
 

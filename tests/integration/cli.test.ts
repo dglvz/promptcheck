@@ -55,6 +55,25 @@ describe("promptcheck run", () => {
     expect(c.stdout()).toContain("✘ Suite no aprobada: bajo el umbral en claude-haiku-5-5");
   });
 
+  it("compara el mismo modelo con distintos esfuerzos y filtra por etiqueta", async () => {
+    const fake = () =>
+      new FakeProvider({ default: "Hola Ana" }).when(
+        (req) => req.effort === "low",
+        "Hola Ana",
+        "Hola",
+      );
+    const c = cli(fake());
+    expect(await c.run("run", "cli/matrix/esfuerzos.yaml")).toBe(1);
+    expect(c.stdout()).toMatch(/│ ana +│ 1\/2 ~ +│ 2\/2 ✔ +│/);
+    expect(c.stdout()).toContain("bajo el umbral en claude-haiku-5-5@low");
+
+    const high = cli(fake());
+    expect(await high.run("run", "cli/matrix/esfuerzos.yaml", "-m", "claude-haiku-5-5@high")).toBe(
+      0,
+    );
+    expect(high.stdout()).not.toContain("@low");
+  });
+
   it("un rechazo hace fallar el trial aunque sus aserciones pasen", async () => {
     const fake = new FakeProvider().when({}, refusal("cyber", "Hola Ana Hola Luis"));
     const c = cli(fake);

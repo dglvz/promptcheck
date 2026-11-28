@@ -20,6 +20,13 @@ export const ModelConfig = z.preprocess(
 );
 export type ModelConfig = z.output<typeof ModelConfig>;
 
+/**
+ * Cómo se nombra un modelo en los trials y en el reporte: `id`, o `id@effort` si la suite fija
+ * el esfuerzo. Así una suite puede comparar el mismo modelo con distintos esfuerzos.
+ */
+export const modelLabel = (m: ModelConfig): string =>
+  m.effort === undefined ? m.id : `${m.id}@${m.effort}`;
+
 export const Defaults = z.strictObject({
   max_tokens: z.int().positive().default(1024),
   trials: z.int().positive().default(1),
@@ -202,14 +209,15 @@ export const Suite = z
 
     const seenModels = new Set<string>();
     suite.models.forEach((m, i) => {
-      if (seenModels.has(m.id)) {
+      const label = modelLabel(m);
+      if (seenModels.has(label)) {
         ctx.addIssue({
           code: "custom",
           path: ["models", i],
-          message: `modelo repetido: "${m.id}"`,
+          message: `modelo repetido: "${label}" (para compararlo consigo mismo, usa otro effort)`,
         });
       }
-      seenModels.add(m.id);
+      seenModels.add(label);
     });
 
     if (suite.judge === undefined) {

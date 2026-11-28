@@ -72,7 +72,7 @@ async function toResult(run: TrialRun, judge: JudgeContext | undefined): Promise
   const base = {
     id: run.trial.id,
     caseId: run.trial.caseId,
-    model: run.trial.model.id,
+    model: run.trial.modelLabel,
     trial: run.trial.trial,
     status: run.status,
   };

@@ -1,11 +1,11 @@
 import Table from "cli-table3";
 import pc from "picocolors";
 import type { SuiteResult, TrialResult } from "../runner/evaluate.js";
-import type { ModelStats, SuiteStats, TokenTotals } from "../stats/aggregate.js";
+import type { CaseStats, ModelStats, SuiteStats, TokenTotals } from "../stats/aggregate.js";
 
 /**
- * Reporte para la terminal (sección 13): una tabla por modelo y, debajo, los casos que
- * fallaron con la razón de cada trial. Devuelve texto; quien llama decide dónde escribirlo.
+ * Reporte para la terminal (sección 13): una tabla por modelo; si hay más de un modelo, la
+ * matriz caso × modelo; y, debajo, los casos que fallaron con la razón de cada trial. Devuelve texto; quien llama decide dónde escribirlo.
  */
 
 export interface TerminalOptions {
@@ -44,7 +44,36 @@ export function trialFailureReason(t: TrialResult): string {
   return reasons.join("; ") || "no aprobó";
 }
 
-function modelRow(m: ModelStats, c: ReturnType<typeof pc.createColors>): string[] {
+type Colors = ReturnType<typeof pc.createColors>;
+
+/** Celda de la matriz: `3/3 ✔` (aprueba siempre), `1/3 ~` (inestable), `0/3 ✘` (nunca). */
+export function matrixCell(cs: CaseStats | undefined, c: Colors): string {
+  if (cs === undefined || cs.executed === 0) return c.dim("—");
+  const count = `${cs.passed}/${cs.executed}`;
+  if (cs.flaky) return c.yellow(`${count} ~`);
+  return cs.passed === cs.executed ? c.green(`${count} ✔`) : c.red(`${count} ✘`);
+}
+
+/** Casos en filas y modelos en columnas, en el orden del plan. */
+function caseMatrix(stats: SuiteStats, c: Colors): string {
+  const models = stats.models.map((m) => m.model);
+  const table = new Table({ head: ["Caso", ...models], style: { head: [], border: [] } });
+  const caseIds = [...new Set(stats.cases.map((cs) => cs.caseId))];
+  for (const caseId of caseIds) {
+    table.push([
+      caseId,
+      ...models.map((model) =>
+        matrixCell(
+          stats.cases.find((cs) => cs.caseId === caseId && cs.model === model),
+          c,
+        ),
+      ),
+    ]);
+  }
+  return table.toString();
+}
+
+function modelRow(m: ModelStats, c: Colors): string[] {
   const rate =
     m.passRate === null
       ? c.dim("—")
@@ -125,6 +154,16 @@ export function renderTerminalReport(
     }
   }
 
+  const flaky = stats.cases.filter((cs) => cs.flaky).length;
+  if (flaky > 0) {
+    lines.push(
+      c.yellow(
+        `⚠ ${flaky} caso(s) inestable(s): aprueban en unos trials y fallan en otros; ` +
+          `suele indicar un prompt ambiguo.`,
+      ),
+    );
+  }
+
   const unused = stats.models.filter((m) => m.cacheUnused).map((m) => m.model);
   if (unused.length > 0) {
     lines.push(
@@ -142,6 +181,11 @@ export function renderTerminalReport(
           `del mínimo cacheable (${MIN_CACHE_HINT}).`,
       ),
     );
+  }
+
+  if (stats.models.length > 1) {
+    lines.push("", c.bold("Resultados por caso:"), caseMatrix(stats, c));
+    lines.push(c.dim("✔ aprueba en todos los trials · ~ inestable · ✘ falla en todos"));
   }
 
   // Casos con algún trial no aprobado, agrupados por caso × modelo.

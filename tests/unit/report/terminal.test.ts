@@ -1,8 +1,10 @@
+import pc from "picocolors";
 import { describe, expect, it } from "vitest";
 import {
   formatCounts,
   formatInt,
   formatPercent,
+  matrixCell,
   renderTerminalReport,
   trialFailureReason,
 } from "../../../src/report/terminal.js";
@@ -69,6 +71,29 @@ describe("formato", () => {
     [1234567, "1.234.567"],
   ])("entero %i → %s", (n, text) => {
     expect(formatInt(n)).toBe(text);
+  });
+});
+
+describe("matrixCell", () => {
+  const cs = (passed: number, executed: number) => ({
+    caseId: "a",
+    model: "m",
+    executed,
+    passed,
+    errors: 0,
+    rate: executed === 0 ? 0 : passed / executed,
+    flaky: passed > 0 && passed < executed,
+  });
+  const plain = pc.createColors(false);
+
+  it.each([
+    [cs(3, 3), "3/3 ✔"],
+    [cs(1, 3), "1/3 ~"],
+    [cs(0, 3), "0/3 ✘"],
+    [cs(0, 0), "—"],
+    [undefined, "—"],
+  ])("%j → %s", (stats, text) => {
+    expect(matrixCell(stats, plain)).toBe(text);
   });
 });
 
@@ -161,6 +186,17 @@ describe("renderTerminalReport", () => {
       └──────────────────┴────────────┴────────┴────────────┴─────────┴──────────────────┴───────────────────┴──────────────────┘
       Umbral de aprobación: 90 %
       ⚠ claude-haiku-5-5: 1 error(es) del proveedor (overloaded)
+      ⚠ 1 caso(s) inestable(s): aprueban en unos trials y fallan en otros; suele indicar un prompt ambiguo.
+
+      Resultados por caso:
+      ┌───────────────┬─────────────────┬──────────────────┐
+      │ Caso          │ claude-opus-5-5 │ claude-haiku-5-5 │
+      ├───────────────┼─────────────────┼──────────────────┤
+      │ correo-reset  │ 2/2 ✔           │ 1/2 ~            │
+      ├───────────────┼─────────────────┼──────────────────┤
+      │ app-se-cierra │ 2/2 ✔           │ 0/2 ✘            │
+      └───────────────┴─────────────────┴──────────────────┘
+      ✔ aprueba en todos los trials · ~ inestable · ✘ falla en todos
 
       Casos con fallos:
         ✘ correo-reset · claude-haiku-5-5 (1/2 aprobados) inestable
@@ -171,6 +207,10 @@ describe("renderTerminalReport", () => {
 
       ✘ Suite no aprobada: bajo el umbral en claude-haiku-5-5"
     `);
+  });
+
+  it("con un solo modelo no muestra la matriz", () => {
+    expect(render(result([t("a", "m", 1, true)]))).not.toContain("Resultados por caso");
   });
 
   it("resume los trials que no entran", () => {

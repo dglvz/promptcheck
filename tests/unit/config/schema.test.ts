@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Assertion, Suite, spanishErrors } from "../../../src/config/schema.js";
+import { Assertion, Suite, modelLabel, spanishErrors } from "../../../src/config/schema.js";
 
 const minimal = {
   name: "Mínima",
@@ -54,6 +54,11 @@ describe("Suite", () => {
       'models.1: modelo repetido: "a"',
     ],
     [
+      "modelo repetido con el mismo effort",
+      { ...minimal, models: [{ id: "a", effort: "low" }, "a", { id: "a", effort: "low" }] },
+      'models.2: modelo repetido: "a@low"',
+    ],
+    [
       "llm_judge sin juez",
       { ...minimal, cases: [{ id: "x", expect: [{ type: "llm_judge", rubric: "r" }] }] },
       "cases.0.expect.0: las aserciones `llm_judge` requieren una sección `judge`",
@@ -70,6 +75,18 @@ describe("Suite", () => {
       found.some((m) => m.includes(expected)),
       found.join("\n"),
     ).toBe(true);
+  });
+
+  it("acepta el mismo modelo con distintos esfuerzos", () => {
+    const models = ["a", { id: "a", effort: "low" }, { id: "a", effort: "high" }];
+    expect(messages({ ...minimal, models })).toEqual([]);
+  });
+
+  it.each([
+    [{ id: "claude-haiku-5-5" }, "claude-haiku-5-5"],
+    [{ id: "claude-haiku-5-5", effort: "low" as const }, "claude-haiku-5-5@low"],
+  ])("modelLabel(%j) = %s", (model, label) => {
+    expect(modelLabel(model)).toBe(label);
   });
 
   it("acepta un juez y fallbacks", () => {

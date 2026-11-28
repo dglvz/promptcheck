@@ -72,7 +72,11 @@ export function createProgram(
     .command("run")
     .description("corre las suites (archivos o carpetas; por defecto, evals/)")
     .argument("[rutas...]", "archivos .yaml o carpetas con suites", ["evals"])
-    .option("-m, --model <ids>", "solo estos modelos (repetible o separados por comas)", collect)
+    .option(
+      "-m, --model <ids>",
+      "solo estos modelos, por id o id@effort (repetible o separados por comas)",
+      collect,
+    )
     .option("-c, --case <ids>", "solo estos casos (repetible o separados por comas)", collect)
     .option("-t, --trials <n>", "repeticiones por caso y modelo", positiveInt("--trials"))
     .option(

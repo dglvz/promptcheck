@@ -10,6 +10,7 @@ const trials = (n: number, model = "claude-haiku-5-5"): Trial[] =>
     id: `caso-${i}/${model}/1`,
     caseId: `caso-${i}`,
     model: { id: model },
+    modelLabel: model,
     trial: 1,
     request: { model, user: `pregunta ${i}`, maxTokens: 100 },
     assertions: [],

@@ -19,12 +19,12 @@ const suite = (overrides: Partial<SuiteInput> = {}) =>
 describe("planSuite", () => {
   it("expande caso × modelo × repetición en orden estable", () => {
     expect(planSuite(suite()).map((t) => t.id)).toEqual([
-      "hola/claude-opus-5-5/1",
-      "hola/claude-opus-5-5/2",
+      "hola/claude-opus-5-5@low/1",
+      "hola/claude-opus-5-5@low/2",
       "hola/claude-haiku-5-5/1",
       "hola/claude-haiku-5-5/2",
-      "chau/claude-opus-5-5/1",
-      "chau/claude-opus-5-5/2",
+      "chau/claude-opus-5-5@low/1",
+      "chau/claude-opus-5-5@low/2",
       "chau/claude-haiku-5-5/1",
       "chau/claude-haiku-5-5/2",
     ]);
@@ -41,7 +41,12 @@ describe("planSuite", () => {
       effort: "low",
     });
     expect(haiku?.request).not.toHaveProperty("effort");
-    expect(first).toMatchObject({ caseId: "hola", trial: 1, model: { id: "claude-opus-5-5" } });
+    expect(first).toMatchObject({
+      caseId: "hola",
+      trial: 1,
+      model: { id: "claude-opus-5-5" },
+      modelLabel: "claude-opus-5-5@low",
+    });
     expect(first?.assertions).toEqual([{ type: "json_valid", weight: 1 }]);
   });
 
@@ -58,6 +63,40 @@ describe("planSuite", () => {
     expect(plan.map((t) => t.id)).toEqual(["chau/claude-haiku-5-5/1", "chau/claude-haiku-5-5/2"]);
   });
 
+  describe("el mismo modelo con distintos esfuerzos", () => {
+    const matrix = () =>
+      suite({
+        models: [
+          { id: "claude-haiku-5-5", effort: "low" },
+          { id: "claude-haiku-5-5", effort: "high" },
+          "claude-opus-5-5",
+        ],
+        cases: [{ id: "x", vars: { texto: "a", idioma: "b" }, expect: [{ type: "json_valid" }] }],
+        defaults: { trials: 1 },
+      });
+
+    it("cada variante es un modelo aparte en los ids", () => {
+      const plan = planSuite(matrix());
+      expect(plan.map((t) => t.id)).toEqual([
+        "x/claude-haiku-5-5@low/1",
+        "x/claude-haiku-5-5@high/1",
+        "x/claude-opus-5-5/1",
+      ]);
+      expect(plan.map((t) => t.request.effort)).toEqual(["low", "high", undefined]);
+    });
+
+    it.each([
+      [["claude-haiku-5-5"], ["claude-haiku-5-5@low", "claude-haiku-5-5@high"]],
+      [["claude-haiku-5-5@high"], ["claude-haiku-5-5@high"]],
+      [
+        ["claude-opus-5-5", "claude-haiku-5-5@low"],
+        ["claude-haiku-5-5@low", "claude-opus-5-5"],
+      ],
+    ])("--model %j elige %j", (models, labels) => {
+      expect(planSuite(matrix(), { models }).map((t) => t.modelLabel)).toEqual(labels);
+    });
+  });
+
   it("permite cambiar el número de trials", () => {
     expect(planSuite(suite(), { trials: 1 })).toHaveLength(4);
     expect(planSuite(suite(), { trials: 3 })).toHaveLength(12);
@@ -69,7 +108,7 @@ describe("planSuite", () => {
 
   it("falla con los ids disponibles si un filtro no existe", () => {
     expect(() => planSuite(suite(), { models: ["claude-opus"] })).toThrow(
-      "modelo desconocido: claude-opus. Disponibles: claude-opus-5-5, claude-haiku-5-5",
+      "modelo desconocido: claude-opus. Disponibles: claude-opus-5-5, claude-opus-5-5@low, claude-haiku-5-5",
     );
     expect(() => planSuite(suite(), { cases: ["a", "b"] })).toThrow(
       "caso desconocidos: a, b. Disponibles: hola, chau",

@@ -1,0 +1,13 @@
+name: Esfuerzos
+models:
+  - { id: claude-haiku-5-5, effort: low }
+  - { id: claude-haiku-5-5, effort: high }
+defaults: { trials: 2 }
+prompt:
+  user: "Saluda a {{nombre}}"
+cases:
+  - id: ana
+    vars: { nombre: Ana }
+    expect:
+      - type: contains
+        value: Ana

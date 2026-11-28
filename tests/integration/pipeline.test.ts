@@ -54,7 +54,7 @@ describe("suite → plan → runner → graders (FakeProvider)", () => {
     );
     const byId = new Map(graded.map((g) => [g.id, g]));
 
-    expect(byId.get("correo-reset/claude-opus-5-5/1")).toMatchObject({
+    expect(byId.get("correo-reset/claude-opus-5-5@medium/1")).toMatchObject({
       pass: true,
       grades: [{ reason: "cumple el esquema" }, { reason: 'categoria vale "cuenta"' }],
     });
@@ -64,7 +64,7 @@ describe("suite → plan → runner → graders (FakeProvider)", () => {
       reason: 'categoria: esperaba "bug", obtuvo "otro"',
     });
     // gradeTrial sin juez en el contexto: llm_judge queda como error de evaluación.
-    expect(byId.get("app-se-cierra/claude-opus-5-5/1")).toMatchObject({
+    expect(byId.get("app-se-cierra/claude-opus-5-5@medium/1")).toMatchObject({
       pass: false,
       grades: [{ pass: true }, { error: true }],
     });

@@ -48,6 +48,12 @@ export interface ModelStats {
    * system está por debajo del mínimo cacheable del modelo (512 tokens en los modelos 5.5).
    */
   cacheUnused: boolean;
+  /** Respuestas con `stop_reason: "refusal"`, por categoría de `stop_details`. */
+  refusals: Record<string, number>;
+  /** Respuestas cortadas por `max_tokens`. */
+  truncated: number;
+  /** Errores del proveedor, por tipo (`rate_limit`, `overloaded`…). */
+  errorKinds: Record<string, number>;
 }
 
 export interface JudgeStats {
@@ -79,6 +85,16 @@ export function sumUsage(usages: readonly Usage[]): TokenTotals {
     }),
     emptyTokens(),
   );
+}
+
+/** Cuenta ocurrencias conservando el orden de primera aparición. */
+export function countBy<T>(items: readonly T[], key: (t: T) => string): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of items) {
+    const k = key(item);
+    counts[k] = (counts[k] ?? 0) + 1;
+  }
+  return counts;
 }
 
 const noCacheActivity = (t: TokenTotals): boolean => t.cacheRead === 0 && t.cacheWrite === 0;
@@ -163,6 +179,15 @@ export function aggregate(result: SuiteResult): SuiteStats {
           : { p50: percentile(latencies, 50), p95: percentile(latencies, 95) },
       tokens,
       cacheUnused: result.cacheSystem && completions.length > 0 && noCacheActivity(tokens),
+      refusals: countBy(
+        completions.filter((c) => c.stopReason === "refusal"),
+        (c) => c.refusalCategory ?? "unspecified",
+      ),
+      truncated: completions.filter((c) => c.stopReason === "max_tokens").length,
+      errorKinds: countBy(
+        trials.flatMap((t) => (t.error ? [t.error] : [])),
+        (e) => e.kind,
+      ),
     });
   }
 

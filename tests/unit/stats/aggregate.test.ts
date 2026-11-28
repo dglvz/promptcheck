@@ -42,6 +42,7 @@ const suite = (
     file: "s.yaml",
     thresholds: { pass_rate, max_regression: 0.05 },
     cacheSystem,
+    maxTokens: 1024,
     results,
     ...(aborted ? { aborted } : {}),
   }) satisfies SuiteResult;
@@ -232,5 +233,48 @@ describe("métricas de caché y del juez", () => {
 
   it("sin juez, judge es null", () => {
     expect(aggregate(suite([trial("a", "m", true)])).judge).toBeNull();
+  });
+});
+
+describe("rechazos, cortes y errores por tipo", () => {
+  const stopped = (stopReason: string, refusalCategory?: string) =>
+    trial("a", "m", false, {
+      completion: {
+        text: "",
+        stopReason,
+        model: "m",
+        latencyMs: 1,
+        usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        ...(refusalCategory === undefined ? {} : { refusalCategory }),
+      },
+    });
+  const failed = (kind: "rate_limit" | "overloaded") =>
+    trial("a", "m", false, {
+      status: "error",
+      completion: null,
+      error: { kind, message: "x", fatal: false },
+    });
+
+  it("cuenta rechazos por categoría, cortes y errores por tipo", () => {
+    const m = aggregate(
+      suite([
+        stopped("refusal", "cyber"),
+        stopped("refusal", "cyber"),
+        stopped("refusal"),
+        stopped("max_tokens"),
+        stopped("end_turn"),
+        failed("rate_limit"),
+        failed("rate_limit"),
+        failed("overloaded"),
+      ]),
+    ).models[0];
+    expect(m?.refusals).toEqual({ cyber: 2, unspecified: 1 });
+    expect(m?.truncated).toBe(1);
+    expect(m?.errorKinds).toEqual({ rate_limit: 2, overloaded: 1 });
+  });
+
+  it("sin incidentes, todo vacío", () => {
+    const m = aggregate(suite([trial("a", "m", true)])).models[0];
+    expect(m).toMatchObject({ refusals: {}, truncated: 0, errorKinds: {} });
   });
 });

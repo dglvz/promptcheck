@@ -1,0 +1,13 @@
+name: Con juez
+models: [claude-haiku-5-5]
+defaults: { trials: 2 }
+judge:
+  model: claude-opus-typo
+prompt:
+  user: "Saluda a {{nombre}}"
+cases:
+  - id: ana
+    vars: { nombre: Ana }
+    expect:
+      - type: llm_judge
+        rubric: "Saluda a Ana por su nombre."

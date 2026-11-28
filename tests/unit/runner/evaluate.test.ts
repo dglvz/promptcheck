@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Suite } from "../../../src/config/schema.js";
 import type { SuiteInput } from "../../../src/config/schema.js";
-import { FakeProvider, refusal } from "../../../src/providers/fake.js";
-import { describeStop, evaluateSuite } from "../../../src/runner/evaluate.js";
+import { FakeProvider, failure, refusal } from "../../../src/providers/fake.js";
+import { describeStop, evaluateSuite, stopAfterFatal } from "../../../src/runner/evaluate.js";
 
 const suite = (overrides: Partial<SuiteInput> = {}) =>
   Suite.parse({
@@ -149,5 +149,51 @@ describe("evaluateSuite: caché del juez", () => {
       },
     );
     expect(r.cacheSystem).toBe(true);
+  });
+});
+
+describe("errores fatales del juez", () => {
+  it("abortan la corrida (código 4) y no repiten la llamada que no puede funcionar", async () => {
+    const model = new FakeProvider({ default: "uno dos" });
+    const judge = new FakeProvider().when({}, failure("not_found", "modelo no encontrado", 404));
+    const result = await evaluateSuite(suite({ defaults: { trials: 3 } }), "s.yaml", {
+      provider: model,
+      judgeProvider: judge,
+      concurrency: 1,
+    });
+    expect(result.aborted).toEqual({
+      kind: "not_found",
+      message: "juez (claude-opus-5-5): modelo no encontrado",
+      fatal: true,
+      status: 404,
+    });
+    expect(judge.calls).toHaveLength(1);
+    expect(result.results[0]?.grades[1]).toMatchObject({
+      error: true,
+      judgeError: { kind: "not_found", fatal: true },
+    });
+  });
+
+  it("un error no fatal del juez no aborta", async () => {
+    const judge = new FakeProvider().when({}, failure("overloaded"));
+    const result = await evaluateSuite(suite({ defaults: { trials: 2 } }), "s.yaml", {
+      provider: new FakeProvider({ default: "uno dos" }),
+      judgeProvider: judge,
+    });
+    expect(result.aborted).toBeUndefined();
+    expect(judge.calls).toHaveLength(4);
+  });
+
+  it("stopAfterFatal deja pasar los errores no fatales y frena tras el primero fatal", async () => {
+    const inner = new FakeProvider().when({}, failure("rate_limit"), failure("permission"), "ok");
+    const guarded = stopAfterFatal(inner);
+    const req = { model: "m", user: "u", maxTokens: 1 };
+    await expect(guarded.complete(req)).rejects.toMatchObject({ kind: "rate_limit" });
+    expect(guarded.fatal()).toBeUndefined();
+    await expect(guarded.complete(req)).rejects.toMatchObject({ kind: "permission" });
+    await expect(guarded.complete(req)).rejects.toMatchObject({ kind: "permission" });
+    expect(inner.calls).toHaveLength(2);
+    expect(guarded.fatal()).toMatchObject({ kind: "permission", fatal: true });
+    expect(guarded.name).toBe("fake");
   });
 });

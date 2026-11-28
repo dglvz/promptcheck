@@ -63,7 +63,7 @@ describe("suite → plan → runner → graders (FakeProvider)", () => {
       pass: false,
       reason: 'categoria: esperaba "bug", obtuvo "otro"',
     });
-    // llm_judge todavía no existe: queda como error de evaluación y el trial no aprueba.
+    // gradeTrial sin juez en el contexto: llm_judge queda como error de evaluación.
     expect(byId.get("app-se-cierra/claude-opus-5-5/1")).toMatchObject({
       pass: false,
       grades: [{ pass: true }, { error: true }],

@@ -1,5 +1,5 @@
-import type { Assertion, AssertionType } from "../config/schema.js";
-import type { CompletionResult } from "../providers/provider.js";
+import type { Assertion, AssertionType, Effort } from "../config/schema.js";
+import type { CompletionResult, Provider, Usage } from "../providers/provider.js";
 
 /** Resultado de evaluar una aserción sobre una respuesta (sección 8). */
 export interface GradeResult {
@@ -15,11 +15,23 @@ export interface GradeResult {
   error?: boolean;
   /** Costo de la evaluación (solo el juez LLM), separado del costo del prompt. */
   costUsd?: number;
+  /** Solo el juez LLM: quién evaluó y cuánto consumió (para el "costo de evaluación"). */
+  judge?: { model: string; usage: Usage; latencyMs: number };
+}
+
+export interface JudgeContext {
+  provider: Provider;
+  model: string;
+  effort?: Effort;
 }
 
 export interface GradeContext {
   /** Costo del trial en USD. `undefined` si el modelo no tiene precio conocido. */
   costUsd?: number;
+  /** Juez configurado en la suite; sin él, `llm_judge` es un error de evaluación. */
+  judge?: JudgeContext;
+  /** Entrada que originó la respuesta, para que el juez la vea. */
+  input?: { system?: string; user: string };
 }
 
 export type AssertionOf<T extends AssertionType> = Extract<Assertion, { type: T }>;

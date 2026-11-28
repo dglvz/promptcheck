@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import type { Effort } from "../config/schema.js";
 
 /**
@@ -15,7 +16,15 @@ export interface CompletionRequest {
   effort?: Effort;
   /** Marca el system prompt como cacheable (prompt caching). */
   cacheSystem?: boolean;
+  /**
+   * Pide salida estructurada que cumpla este esquema (lo usa el juez LLM). El resultado trae
+   * `structured` con el valor validado o el motivo por el que no se pudo interpretar.
+   */
+  outputSchema?: z.ZodType;
 }
+
+/** Resultado de interpretar una salida estructurada; nunca lanza, para no perder el `usage`. */
+export type StructuredOutput = { ok: true; value: unknown } | { ok: false; error: string };
 
 /**
  * Motivos de parada conocidos. Se acepta cualquier otro texto para no romper si la API agrega
@@ -40,6 +49,8 @@ export interface CompletionResult {
   usage: Usage;
   /** Solo si `stopReason === "refusal"`: categoría informada por la API. */
   refusalCategory?: string;
+  /** Solo si la petición traía `outputSchema`. */
+  structured?: StructuredOutput;
 }
 
 export interface Provider {

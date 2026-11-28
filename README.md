@@ -53,7 +53,7 @@ thresholds:
 
 ### Aserciones
 
-`equals`, `contains`, `not_contains`, `regex`, `max_length`, `json_valid`, `json_schema`, `json_path_equals`, `latency_below`, `cost_below` (y `llm_judge` en v0.2). Un trial aprueba si **todas** sus aserciones aprueban y la respuesta terminó normalmente (un rechazo o un corte por `max_tokens` no aprueban).
+`equals`, `contains`, `not_contains`, `regex`, `max_length`, `json_valid`, `json_schema`, `json_path_equals`, `latency_below`, `cost_below` y `llm_judge` (otro modelo califica con una rúbrica; requiere una sección `judge` en la suite). Un trial aprueba si **todas** sus aserciones aprueban y la respuesta terminó normalmente (un rechazo o un corte por `max_tokens` no aprueban).
 
 ### Cómo se calcula la aprobación
 

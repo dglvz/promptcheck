@@ -55,7 +55,7 @@ Antes de implementar algo en `providers/` o `pricing/`, verificar los IDs de mod
 
 - No enviar `temperature`, `top_p` ni `top_k`. La variabilidad se maneja con repeticiones.
 - El esfuerzo se controla con `output_config: { effort }` y se fija siempre de forma explícita.
-- Las salidas estructuradas se piden con `client.messages.parse()` + `zodOutputFormat`.
+- Las salidas estructuradas usan `zodOutputFormat` (helper del SDK) en `output_config.format` con `messages.create`, interpretadas con el `parse` del mismo helper. No usar `messages.parse()`: lanza si el JSON no cumple y se pierden el texto y el `usage` de una llamada ya pagada.
 - Sin prefill del asistente: devuelve un error 400.
 - Revisar `stop_reason` antes de leer el contenido. `max_tokens` y `refusal` son resultados propios del trial, no errores genéricos.
 - Para los errores, usar las clases tipadas del SDK, de la más específica a la más general. Nunca comparar textos de error.

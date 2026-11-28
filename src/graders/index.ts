@@ -3,10 +3,12 @@ import type { CompletionResult } from "../providers/provider.js";
 import { jsonPathEquals, jsonSchema, jsonValid } from "./deterministic/json.js";
 import { costBelow, latencyBelow } from "./deterministic/metrics.js";
 import { contains, equals, maxLength, notContains, regex } from "./deterministic/text.js";
+import { llmJudge } from "./judge.js";
 import { gradeError } from "./types.js";
 import type { GradeContext, GradeResult } from "./types.js";
 
 export * from "./types.js";
+export { JudgeVerdict, JUDGE_INSTRUCTIONS, JUDGE_MAX_TOKENS, buildJudgePrompt } from "./judge.js";
 export { parseJsonResponse, getPath } from "./json.js";
 export { describeSchemaError } from "./deterministic/json.js";
 
@@ -39,8 +41,7 @@ export async function gradeAssertion(
       case "cost_below":
         return await costBelow(output, assertion, ctx);
       case "llm_judge":
-        // Llega con el issue 11 (juez con salida estructurada).
-        return gradeError("el calificador llm_judge todavía no está implementado");
+        return await llmJudge(output, assertion, ctx);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

@@ -1,8 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   AnthropicProvider,
   buildParams,
+  parseStructured,
   toProviderError,
   toResult,
 } from "../../../src/providers/anthropic.js";
@@ -258,5 +260,60 @@ describe("AnthropicProvider", () => {
 
   it("no crea el cliente real hasta la primera llamada", () => {
     expect(() => new AnthropicProvider()).not.toThrow();
+  });
+});
+
+describe("salida estructurada", () => {
+  const Verdict = z.object({ reasoning: z.string(), score: z.number(), pass: z.boolean() });
+
+  it("envía el esquema del helper del SDK en output_config.format, junto al esfuerzo", () => {
+    const params = buildParams(req({ effort: "low", outputSchema: Verdict }));
+    expect(params.output_config).toEqual({
+      effort: "low",
+      format: {
+        type: "json_schema",
+        schema: {
+          type: "object",
+          properties: {
+            reasoning: { type: "string" },
+            score: { type: "number" },
+            pass: { type: "boolean" },
+          },
+          required: ["reasoning", "score", "pass"],
+          additionalProperties: false,
+        },
+      },
+    });
+  });
+
+  it("el formato enviado no incluye la función parse del helper", () => {
+    const format = buildParams(req({ outputSchema: Verdict })).output_config?.format;
+    expect(format).not.toHaveProperty("parse");
+  });
+
+  it.each([
+    ['{"reasoning":"r","score":0.5,"pass":false}', true],
+    ['{"reasoning":"r","score":"alto","pass":false}', false],
+    ["no es json", false],
+    ["", false],
+  ])("parseStructured(%j) → ok: %s", (text, ok) => {
+    const r = parseStructured(Verdict, text);
+    expect(r.ok).toBe(ok);
+    if (r.ok) expect(r.value).toEqual({ reasoning: "r", score: 0.5, pass: false });
+    else expect(r.error).toMatch(/Failed to parse structured output/);
+  });
+
+  it("complete() agrega structured sin perder texto ni usage si el JSON no cumple", async () => {
+    const { client } = fakeClient(() =>
+      message({ content: [{ type: "text", text: '{"score":2}', citations: null }] }),
+    );
+    const provider = new AnthropicProvider({ client });
+    const result = await provider.complete(req({ outputSchema: Verdict }));
+    expect(result.text).toBe('{"score":2}');
+    expect(result.usage.input).toBe(12);
+    expect(result.structured?.ok).toBe(false);
+
+    const plain = await provider.complete(req());
+    expect(plain).not.toHaveProperty("structured");
   });
 });

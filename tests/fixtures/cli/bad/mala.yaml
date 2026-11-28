@@ -1,0 +1,9 @@
+name: Mala
+models: [claude-haiku-5-5]
+prompt:
+  user: "{{texto}}"
+cases:
+  - id: uno
+    expect:
+      - type: contiene
+        value: x

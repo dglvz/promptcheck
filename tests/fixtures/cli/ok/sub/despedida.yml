@@ -1,0 +1,9 @@
+name: Despedida
+models: [claude-haiku-5-5]
+prompt:
+  user: "Despídete"
+cases:
+  - id: chau
+    expect:
+      - type: not_contains
+        value: error

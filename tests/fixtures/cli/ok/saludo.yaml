@@ -1,0 +1,16 @@
+name: Saludo
+models: [claude-haiku-5-5]
+defaults: { trials: 2 }
+prompt:
+  user: "Saluda a {{nombre}}"
+cases:
+  - id: ana
+    vars: { nombre: Ana }
+    expect:
+      - type: contains
+        value: Ana
+  - id: luis
+    vars: { nombre: Luis }
+    expect:
+      - type: contains
+        value: Luis

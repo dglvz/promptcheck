@@ -1,7 +1,8 @@
 import pLimit from "p-limit";
 import type { Trial } from "../planner/plan.js";
-import { ProviderError } from "../providers/provider.js";
+import { ProviderError, cachePrefixKey } from "../providers/provider.js";
 import type { CompletionResult, Provider, ProviderErrorKind } from "../providers/provider.js";
+import { mapWithWarmup } from "./warmup.js";
 
 /**
  * Ejecuta los trials contra un proveedor con concurrencia limitada (sección 5).
@@ -12,6 +13,8 @@ import type { CompletionResult, Provider, ProviderErrorKind } from "../providers
  * - Un error no fatal (rate limit, sobrecarga, 5xx…) queda registrado en su trial y la corrida
  *   sigue. Un error fatal (credenciales, petición inválida, facturación…) deja de lanzar trials
  *   nuevos: los que ya estaban en curso terminan y el resto se marca como omitido.
+ * - Con prompt caching, el primer trial de cada prefijo corre antes que el resto de ese
+ *   prefijo (ver warmup.ts); sin eso, los trials en paralelo pagarían todos la escritura.
  *
  * La caché de respuestas y el tope de gasto (`--max-cost`) se agregan aquí en v0.2.
  */
@@ -74,26 +77,25 @@ export async function runTrials(trials: readonly Trial[], options: RunOptions): 
   let aborted: TrialError | undefined;
   let done = 0;
 
-  const runs = await Promise.all(
-    trials.map((trial) =>
-      limit(async (): Promise<TrialRun> => {
-        if (aborted !== undefined) return { trial, status: "skipped" };
+  const runOne = async (trial: Trial): Promise<TrialRun> => {
+    if (aborted !== undefined) return { trial, status: "skipped" };
 
-        let run: TrialRun;
-        try {
-          const completion = await options.provider.complete(trial.request);
-          run = { trial, status: "completed", completion };
-        } catch (err) {
-          const error = toTrialError(err);
-          if (error.fatal) aborted ??= error;
-          run = { trial, status: "error", error };
-        }
-        done++;
-        options.onTrialDone?.(run, done, trials.length);
-        return run;
-      }),
-    ),
-  );
+    let run: TrialRun;
+    try {
+      const completion = await options.provider.complete(trial.request);
+      run = { trial, status: "completed", completion };
+    } catch (err) {
+      const error = toTrialError(err);
+      if (error.fatal) aborted ??= error;
+      run = { trial, status: "error", error };
+    }
+    done++;
+    options.onTrialDone?.(run, done, trials.length);
+    return run;
+  };
+
+  // El primer trial de cada prefijo cacheable corre solo, para que los demás lean la caché.
+  const runs = await mapWithWarmup(trials, limit, (t) => cachePrefixKey(t.request), runOne);
 
   return aborted === undefined ? { runs } : { runs, aborted };
 }

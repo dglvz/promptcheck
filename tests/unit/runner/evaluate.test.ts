@@ -120,3 +120,34 @@ describe("describeStop", () => {
     );
   });
 });
+
+describe("evaluateSuite: caché del juez", () => {
+  it("el primer trial de cada caso se califica solo, para que el resto lea la caché del juez", async () => {
+    const model = new FakeProvider({ default: "uno dos" });
+    const judge = new FakeProvider({ default: verdict(1), delayMs: 10 });
+    const result = await evaluateSuite(suite({ defaults: { trials: 3 } }), "s.yaml", {
+      provider: model,
+      judgeProvider: judge,
+      concurrency: 4,
+    });
+    const reads = (caseId: string) =>
+      result.results
+        .filter((r) => r.caseId === caseId)
+        .map((r) =>
+          (r.grades.find((g) => g.judge)?.judge?.usage.cacheRead ?? 0) > 0 ? "read" : "write",
+        );
+    expect(reads("a")).toEqual(["write", "read", "read"]);
+    expect(reads("b")).toEqual(["write", "read", "read"]);
+  });
+
+  it("informa si la suite pidió caché del system", async () => {
+    const r = await evaluateSuite(
+      suite({ defaults: { trials: 1, cache_system: true } }),
+      "s.yaml",
+      {
+        provider: new FakeProvider({ default: verdict(1) }),
+      },
+    );
+    expect(r.cacheSystem).toBe(true);
+  });
+});

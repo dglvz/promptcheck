@@ -107,3 +107,13 @@ export class ProviderError extends Error {
 }
 
 export const emptyUsage = (): Usage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+
+/**
+ * Clave del prefijo cacheable de una petición: modelo + effort + system. El effort se incluye
+ * porque forma parte del prefijo que arma la API (cambiarlo invalida la caché).
+ * `undefined` si la petición no usa prompt caching.
+ */
+export function cachePrefixKey(req: CompletionRequest): string | undefined {
+  if (req.cacheSystem !== true || req.system === undefined || req.system === "") return undefined;
+  return JSON.stringify([req.model, req.effort ?? null, req.system]);
+}

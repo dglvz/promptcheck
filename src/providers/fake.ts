@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { ProviderError } from "./provider.js";
+import { ProviderError, cachePrefixKey } from "./provider.js";
 import type {
   CompletionRequest,
   CompletionResult,
@@ -93,7 +93,8 @@ export class FakeProvider implements Provider {
 
   private inFlight = 0;
   private readonly rules: Rule[] = [];
-  private readonly seenSystems = new Set<string>();
+  /** Prefijos ya cacheados (legibles), como en la API: modelo + effort + system. */
+  private readonly cachedPrefixes = new Set<string>();
   private readonly options: FakeProviderOptions;
 
   constructor(options: FakeProviderOptions = {}) {
@@ -112,6 +113,11 @@ export class FakeProvider implements Provider {
     this.inFlight++;
     this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
     try {
+      // Como en la API: una entrada de caché solo se puede leer cuando terminó la petición que
+      // la escribe. Las que empiezan antes, en paralelo, también escriben.
+      const prefix = cachePrefixKey(req);
+      const cacheHit = prefix !== undefined && this.cachedPrefixes.has(prefix);
+
       const delay = this.options.delayMs ?? 0;
       if (delay > 0) await new Promise((r) => setTimeout(r, delay));
 
@@ -121,7 +127,14 @@ export class FakeProvider implements Provider {
         reply = await reply(req, call++);
       }
       if (isFailure(reply)) throw reply.error;
-      return this.toResult(req, typeof reply === "string" ? { text: reply } : reply, delay);
+      if (prefix !== undefined) this.cachedPrefixes.add(prefix);
+      const completion = typeof reply === "string" ? { text: reply } : reply;
+      return this.toResult(
+        req,
+        completion,
+        delay,
+        prefix === undefined ? "none" : cacheHit ? "read" : "write",
+      );
     } finally {
       this.inFlight--;
     }
@@ -141,19 +154,17 @@ export class FakeProvider implements Provider {
     );
   }
 
-  private toResult(req: CompletionRequest, reply: FakeCompletion, delay: number): CompletionResult {
-    const system = req.system ?? "";
-    const systemTokens = estimateTokens(system);
-    let cacheRead = 0;
-    let cacheWrite = 0;
-    if (req.cacheSystem === true && system !== "") {
-      // Imita el prompt caching: la primera vez se escribe, las siguientes se lee.
-      if (this.seenSystems.has(system)) cacheRead = systemTokens;
-      else cacheWrite = systemTokens;
-      this.seenSystems.add(system);
-    }
+  private toResult(
+    req: CompletionRequest,
+    reply: FakeCompletion,
+    delay: number,
+    cache: "none" | "read" | "write",
+  ): CompletionResult {
+    const systemTokens = estimateTokens(req.system ?? "");
+    const cacheRead = cache === "read" ? systemTokens : 0;
+    const cacheWrite = cache === "write" ? systemTokens : 0;
     const usage: Usage = {
-      input: (cacheRead > 0 || cacheWrite > 0 ? 0 : systemTokens) + estimateTokens(req.user),
+      input: (cache === "none" ? systemTokens : 0) + estimateTokens(req.user),
       output: estimateTokens(reply.text),
       cacheRead,
       cacheWrite,

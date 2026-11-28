@@ -1,6 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import type { z } from "zod";
 import { ProviderError } from "./provider.js";
-import type { CompletionRequest, CompletionResult, Provider } from "./provider.js";
+import type {
+  CompletionRequest,
+  CompletionResult,
+  Provider,
+  StructuredOutput,
+} from "./provider.js";
 
 /**
  * Proveedor real contra la API de Claude (sección 9). Es el único módulo que llama a la API.
@@ -16,6 +23,10 @@ import type { CompletionRequest, CompletionResult, Provider } from "./provider.j
  * - `stop_reason` se devuelve tal cual; `refusal` trae la categoría de `stop_details`.
  * - Los errores se clasifican por clase tipada del SDK, nunca por el texto del mensaje.
  *   El SDK ya reintenta 408/409/429/5xx y errores de conexión (2 veces por defecto).
+ * - Salidas estructuradas: el formato sale de `zodOutputFormat` (el helper del SDK convierte el
+ *   esquema zod) y va en `output_config.format`. Se llama a `messages.create` y se interpreta
+ *   con el `parse` del mismo helper, en vez de `messages.parse()`: este último lanza si el JSON
+ *   no cumple el esquema y se pierden el texto y el `usage` de una llamada ya pagada.
  */
 
 /** Lo mínimo que se usa del cliente; permite inyectar uno simulado en las pruebas. */
@@ -59,7 +70,11 @@ export class AnthropicProvider implements Provider {
       throw toProviderError(err);
     }
     const latencyMs = Math.round(this.now() - start);
-    return toResult(response, latencyMs);
+    const result = toResult(response, latencyMs);
+    if (req.outputSchema !== undefined) {
+      result.structured = parseStructured(req.outputSchema, result.text);
+    }
+    return result;
   }
 
   /**
@@ -99,10 +114,37 @@ export function buildParams(req: CompletionRequest): Anthropic.MessageCreatePara
         ? [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }]
         : req.system;
   }
-  if (req.effort !== undefined) {
-    params.output_config = { effort: req.effort };
+  if (req.effort !== undefined || req.outputSchema !== undefined) {
+    params.output_config = {
+      ...(req.effort === undefined ? {} : { effort: req.effort }),
+      ...(req.outputSchema === undefined
+        ? {}
+        : { format: { type: "json_schema", schema: formatFor(req.outputSchema).schema } }),
+    };
   }
   return params;
+}
+
+type OutputFormat = ReturnType<typeof zodOutputFormat>;
+const formats = new WeakMap<z.ZodType, OutputFormat>();
+
+/** El formato del helper del SDK, convertido una sola vez por esquema. */
+function formatFor(schema: z.ZodType): OutputFormat {
+  let format = formats.get(schema);
+  if (format === undefined) {
+    format = zodOutputFormat(schema);
+    formats.set(schema, format);
+  }
+  return format;
+}
+
+/** Interpreta la salida estructurada con el validador del helper del SDK. Nunca lanza. */
+export function parseStructured(schema: z.ZodType, text: string): StructuredOutput {
+  try {
+    return { ok: true, value: formatFor(schema).parse(text) };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** Traduce la respuesta del SDK al resultado de promptcheck. Función pura. */

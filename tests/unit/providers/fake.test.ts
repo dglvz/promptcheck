@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   FakeProvider,
   estimateTokens,
@@ -220,5 +221,24 @@ describe("ProviderError", () => {
     expect(err.cause).toBe(cause);
     expect(err.status).toBe(500);
     expect(err.name).toBe("ProviderError");
+  });
+});
+
+describe("FakeProvider con salida estructurada", () => {
+  const Schema = z.object({ score: z.number() });
+
+  it.each([
+    ['{"score":0.4}', { ok: true, value: { score: 0.4 } }],
+    ['{"score":"x"}', { ok: false }],
+    ["texto", { ok: false }],
+  ])("%j", async (text, expected) => {
+    const fake = new FakeProvider().when({}, text);
+    const result = await fake.complete(req({ outputSchema: Schema }));
+    expect(result.structured).toMatchObject(expected);
+  });
+
+  it("sin outputSchema no agrega structured", async () => {
+    const result = await new FakeProvider({ default: "{}" }).complete(req());
+    expect(result).not.toHaveProperty("structured");
   });
 });

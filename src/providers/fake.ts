@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import { ProviderError } from "./provider.js";
 import type {
   CompletionRequest,
@@ -5,6 +6,7 @@ import type {
   Provider,
   ProviderErrorKind,
   StopReason,
+  StructuredOutput,
   Usage,
 } from "./provider.js";
 
@@ -164,8 +166,28 @@ export class FakeProvider implements Provider {
       latencyMs: reply.latencyMs ?? delay,
       usage,
       ...(reply.refusalCategory === undefined ? {} : { refusalCategory: reply.refusalCategory }),
+      ...(req.outputSchema === undefined
+        ? {}
+        : { structured: parseFakeStructured(req.outputSchema, reply.text) }),
     };
   }
+}
+
+/** Igual que el proveedor real: JSON del texto validado con el esquema; nunca lanza. */
+function parseFakeStructured(schema: z.ZodType, text: string): StructuredOutput {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch (err) {
+    return {
+      ok: false,
+      error: `JSON inválido: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+  const parsed = schema.safeParse(value);
+  return parsed.success
+    ? { ok: true, value: parsed.data }
+    : { ok: false, error: parsed.error.issues.map((i) => i.message).join("; ") };
 }
 
 /** Respuesta de rechazo (`stop_reason: "refusal"`). */

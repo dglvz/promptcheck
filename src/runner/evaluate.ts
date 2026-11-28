@@ -1,10 +1,11 @@
+import pLimit from "p-limit";
 import type { Suite, Thresholds } from "../config/schema.js";
 import { gradeTrial } from "../graders/index.js";
-import type { GradeResult } from "../graders/index.js";
+import type { GradeResult, JudgeContext } from "../graders/index.js";
 import { planSuite } from "../planner/plan.js";
 import type { PlanOptions } from "../planner/plan.js";
 import type { CompletionResult, Provider } from "../providers/provider.js";
-import { runTrials } from "./run.js";
+import { DEFAULT_CONCURRENCY, runTrials } from "./run.js";
 import type { TrialError, TrialRun } from "./run.js";
 
 /**
@@ -41,6 +42,8 @@ export interface SuiteResult {
 
 export interface EvaluateOptions {
   provider: Provider;
+  /** Proveedor del juez LLM; por defecto, el mismo que el de los trials. */
+  judgeProvider?: Provider;
   plan?: PlanOptions;
   concurrency?: number;
   onTrialDone?: (done: number, total: number) => void;
@@ -59,7 +62,7 @@ export function describeStop(completion: CompletionResult): string | undefined {
   return `la respuesta terminó por ${completion.stopReason}`;
 }
 
-async function toResult(run: TrialRun): Promise<TrialResult> {
+async function toResult(run: TrialRun, judge: JudgeContext | undefined): Promise<TrialResult> {
   const base = {
     id: run.trial.id,
     caseId: run.trial.caseId,
@@ -77,7 +80,11 @@ async function toResult(run: TrialRun): Promise<TrialResult> {
       score: 0,
     };
   }
-  const graded = await gradeTrial(run.completion, run.trial.assertions);
+  const { system, user } = run.trial.request;
+  const graded = await gradeTrial(run.completion, run.trial.assertions, {
+    ...(judge === undefined ? {} : { judge }),
+    input: { user, ...(system === undefined ? {} : { system }) },
+  });
   const stopIssue = describeStop(run.completion);
   return {
     ...base,
@@ -102,7 +109,18 @@ export async function evaluateSuite(
       ? {}
       : { onTrialDone: (_run, done, total) => options.onTrialDone?.(done, total) }),
   });
-  const results = await Promise.all(runs.map(toResult));
+
+  // El juez también llama a la API: sus llamadas respetan el mismo límite de concurrencia.
+  const judge: JudgeContext | undefined =
+    suite.judge === undefined
+      ? undefined
+      : {
+          provider: options.judgeProvider ?? options.provider,
+          model: suite.judge.model,
+          ...(suite.judge.effort === undefined ? {} : { effort: suite.judge.effort }),
+        };
+  const limit = pLimit(options.concurrency ?? DEFAULT_CONCURRENCY);
+  const results = await Promise.all(runs.map((run) => limit(() => toResult(run, judge))));
   return {
     name: suite.name,
     file,

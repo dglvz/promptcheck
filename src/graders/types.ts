@@ -1,5 +1,10 @@
 import type { Assertion, AssertionType, Effort } from "../config/schema.js";
-import type { CompletionResult, Provider, Usage } from "../providers/provider.js";
+import type {
+  CompletionResult,
+  Provider,
+  ProviderErrorKind,
+  Usage,
+} from "../providers/provider.js";
 
 /** Resultado de evaluar una aserción sobre una respuesta (sección 8). */
 export interface GradeResult {
@@ -17,6 +22,8 @@ export interface GradeResult {
   costUsd?: number;
   /** Solo el juez LLM: quién evaluó y cuánto consumió (para el "costo de evaluación"). */
   judge?: { model: string; usage: Usage; latencyMs: number };
+  /** Solo el juez LLM: error del proveedor del juez, para detectar los fatales. */
+  judgeError?: { kind: ProviderErrorKind; message: string; fatal: boolean };
 }
 
 export interface JudgeContext {

@@ -4,8 +4,9 @@ import { gradeTrial } from "../graders/index.js";
 import type { GradeResult, JudgeContext } from "../graders/index.js";
 import { planSuite } from "../planner/plan.js";
 import type { PlanOptions } from "../planner/plan.js";
+import { ProviderError } from "../providers/provider.js";
 import type { CompletionResult, Provider } from "../providers/provider.js";
-import { DEFAULT_CONCURRENCY, runTrials } from "./run.js";
+import { DEFAULT_CONCURRENCY, runTrials, toTrialError } from "./run.js";
 import type { TrialError, TrialRun } from "./run.js";
 import { mapWithWarmup } from "./warmup.js";
 
@@ -38,8 +39,10 @@ export interface SuiteResult {
   thresholds: Thresholds;
   /** Si la suite pidió prompt caching del system (para avisar cuando no tuvo efecto). */
   cacheSystem: boolean;
+  /** `defaults.max_tokens` de la suite (para sugerir subirlo si hubo cortes). */
+  maxTokens: number;
   results: TrialResult[];
-  /** Presente si la corrida se cortó por un error fatal del proveedor. */
+  /** Presente si la corrida se cortó por un error fatal del proveedor (de los trials o del juez). */
   aborted?: TrialError;
 }
 
@@ -114,11 +117,12 @@ export async function evaluateSuite(
   });
 
   // El juez también llama a la API: sus llamadas respetan el mismo límite de concurrencia.
+  const judgeProvider = stopAfterFatal(options.judgeProvider ?? options.provider);
   const judge: JudgeContext | undefined =
     suite.judge === undefined
       ? undefined
       : {
-          provider: options.judgeProvider ?? options.provider,
+          provider: judgeProvider,
           model: suite.judge.model,
           ...(suite.judge.effort === undefined ? {} : { effort: suite.judge.effort }),
         };
@@ -132,12 +136,43 @@ export async function evaluateSuite(
       ? run.trial.caseId
       : undefined;
   const results = await mapWithWarmup(runs, limit, judgeGroup, (run) => toResult(run, judge));
+
+  // Un error fatal del juez (por ejemplo, judge.model inexistente) invalida la corrida igual
+  // que uno de los trials: código de salida 4 en vez de "no evaluable" en cada trial.
+  const judgeFatal = judgeProvider.fatal();
+  const stopped =
+    aborted ??
+    (judgeFatal === undefined
+      ? undefined
+      : { ...judgeFatal, message: `juez (${suite.judge?.model ?? "?"}): ${judgeFatal.message}` });
   return {
     name: suite.name,
     file,
     thresholds: suite.thresholds,
     cacheSystem: suite.defaults.cache_system,
+    maxTokens: suite.defaults.max_tokens,
     results,
-    ...(aborted === undefined ? {} : { aborted }),
+    ...(stopped === undefined ? {} : { aborted: stopped }),
+  };
+}
+
+/**
+ * Envuelve un proveedor para que, tras el primer error fatal, las llamadas siguientes fallen
+ * al instante con ese mismo error en vez de repetir una petición que no puede funcionar.
+ */
+export function stopAfterFatal(provider: Provider): Provider & { fatal(): TrialError | undefined } {
+  let fatal: ProviderError | undefined;
+  return {
+    name: provider.name,
+    fatal: () => (fatal === undefined ? undefined : toTrialError(fatal)),
+    async complete(req) {
+      if (fatal !== undefined) throw fatal;
+      try {
+        return await provider.complete(req);
+      } catch (err) {
+        if (err instanceof ProviderError && err.fatal) fatal ??= err;
+        throw err;
+      }
+    },
   };
 }

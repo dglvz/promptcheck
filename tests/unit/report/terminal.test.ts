@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatCounts,
   formatInt,
   formatPercent,
   renderTerminalReport,
@@ -44,6 +45,7 @@ const result = (results: TrialResult[], extra: Partial<SuiteResult> = {}): Suite
   file: "evals/tickets.yaml",
   thresholds: { pass_rate: 0.9, max_regression: 0.05 },
   cacheSystem: false,
+  maxTokens: 1024,
   results,
   ...extra,
 });
@@ -158,6 +160,7 @@ describe("renderTerminalReport", () => {
       │ claude-haiku-5-5 │ 25 % ✘     │ 1/4    │ 1          │ 1       │ 3.600 / 900      │ —                 │ 600 / 700 ms     │
       └──────────────────┴────────────┴────────┴────────────┴─────────┴──────────────────┴───────────────────┴──────────────────┘
       Umbral de aprobación: 90 %
+      ⚠ claude-haiku-5-5: 1 error(es) del proveedor (overloaded)
 
       Casos con fallos:
         ✘ correo-reset · claude-haiku-5-5 (1/2 aprobados) inestable
@@ -244,5 +247,44 @@ describe("caché y juez en el reporte", () => {
       "Juez (claude-opus-5-5): 1 evaluación(es) · tokens 1.000 / 80 · caché 700 / 0",
     );
     expect(render(result([judged(0)]))).toContain("⚠ El prefijo del juez no se cacheó");
+  });
+});
+
+describe("rechazos, cortes y errores en el reporte", () => {
+  const stopped = (trial: number, stopReason: string, refusalCategory?: string) =>
+    t("a", "claude-haiku-5-5", trial, false, {
+      completion: {
+        ...completion(500),
+        stopReason,
+        ...(refusalCategory === undefined ? {} : { refusalCategory }),
+      },
+    });
+
+  it("resume por modelo y sugiere subir max_tokens", () => {
+    const out = render(
+      result([
+        stopped(1, "refusal", "cyber"),
+        stopped(2, "refusal", "cyber"),
+        stopped(3, "max_tokens"),
+        t("a", "claude-haiku-5-5", 4, false, {
+          status: "error",
+          completion: null,
+          error: { kind: "rate_limit", message: "x", fatal: false },
+        }),
+      ]),
+    );
+    expect(out).toContain("⚠ claude-haiku-5-5: 2 rechazo(s) del modelo (cyber ×2)");
+    expect(out).toContain(
+      "⚠ claude-haiku-5-5: 1 respuesta(s) cortada(s) por max_tokens; prueba a subir defaults.max_tokens (ahora 1.024)",
+    );
+    expect(out).toContain("⚠ claude-haiku-5-5: 1 error(es) del proveedor (rate_limit)");
+  });
+
+  it.each([
+    [{}, ""],
+    [{ cyber: 1 }, "cyber"],
+    [{ cyber: 2, bio: 1 }, "cyber ×2, bio"],
+  ])("formatCounts(%j) = %j", (counts, text) => {
+    expect(formatCounts(counts)).toBe(text);
   });
 });

@@ -103,6 +103,17 @@ describe("promptcheck run", () => {
     expect(c.stderr()).toContain("No se corrieron 1 suite(s) restante(s).");
   });
 
+  it("sale con 4 si el modelo del juez no existe", async () => {
+    const fake = new FakeProvider()
+      .when({ model: "claude-opus-typo" }, failure("not_found", "modelo no encontrado", 404))
+      .when({}, "Hola Ana");
+    const c = cli(fake);
+    expect(await c.run("run", "cli/judge")).toBe(4);
+    expect(c.stdout()).toContain(
+      "✘ Corrida detenida: [not_found] juez (claude-opus-typo): modelo no encontrado",
+    );
+  });
+
   it("aplica --model, --case, --trials y --concurrency", async () => {
     const fake = echo();
     const c = cli(fake);

@@ -111,8 +111,13 @@ export const llmJudge: Grader<"llm_judge"> = async (output, a, ctx) => {
       ...(ctx.judge.effort === undefined ? {} : { effort: ctx.judge.effort }),
     });
   } catch (err) {
-    const detail = err instanceof ProviderError ? `[${err.kind}] ${err.message}` : String(err);
-    return gradeError(`el juez falló: ${detail}`);
+    if (err instanceof ProviderError) {
+      return {
+        ...gradeError(`el juez falló: [${err.kind}] ${err.message}`),
+        judgeError: { kind: err.kind, message: err.message, fatal: err.fatal },
+      };
+    }
+    return gradeError(`el juez falló: ${String(err)}`);
   }
 
   const withJudge = (r: GradeResult): GradeResult => ({ ...r, judge: judgeInfo(verdict) });

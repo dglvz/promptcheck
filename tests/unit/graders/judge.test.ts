@@ -183,6 +183,7 @@ describe("llm_judge", () => {
         score: 0,
         error: true,
         reason: "el juez falló: [overloaded] sobrecargada",
+        judgeError: { kind: "overloaded", message: "sobrecargada", fatal: false },
       });
     });
 

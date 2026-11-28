@@ -25,6 +25,12 @@ export const formatCache = (t: TokenTotals): string =>
     ? "—"
     : `${formatInt(t.cacheRead)} / ${formatInt(t.cacheWrite)}`;
 
+/** `{ cyber: 2, bio: 1 }` → `cyber ×2, bio ×1`. */
+export const formatCounts = (counts: Readonly<Record<string, number>>): string =>
+  Object.entries(counts)
+    .map(([k, n]) => (n === 1 ? k : `${k} ×${n}`))
+    .join(", ");
+
 export const formatPercent = (rate: number): string => `${nf.format(rate * 100)} %`;
 export const formatInt = (n: number): string => int.format(n);
 
@@ -93,6 +99,30 @@ export function renderTerminalReport(
           `${formatInt(j.tokens.input)} / ${formatInt(j.tokens.output)} · caché ${formatCache(j.tokens)}`,
       ),
     );
+  }
+
+  for (const m of stats.models) {
+    const refusals = Object.values(m.refusals).reduce((a, b) => a + b, 0);
+    if (refusals > 0) {
+      lines.push(
+        c.yellow(`⚠ ${m.model}: ${refusals} rechazo(s) del modelo (${formatCounts(m.refusals)})`),
+      );
+    }
+    if (m.truncated > 0) {
+      lines.push(
+        c.yellow(
+          `⚠ ${m.model}: ${m.truncated} respuesta(s) cortada(s) por max_tokens; ` +
+            `prueba a subir defaults.max_tokens (ahora ${formatInt(result.maxTokens)})`,
+        ),
+      );
+    }
+    if (m.errors > 0) {
+      lines.push(
+        c.yellow(
+          `⚠ ${m.model}: ${m.errors} error(es) del proveedor (${formatCounts(m.errorKinds)})`,
+        ),
+      );
+    }
   }
 
   const unused = stats.models.filter((m) => m.cacheUnused).map((m) => m.model);

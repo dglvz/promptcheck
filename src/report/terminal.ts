@@ -1,7 +1,7 @@
 import Table from "cli-table3";
 import pc from "picocolors";
 import type { SuiteResult, TrialResult } from "../runner/evaluate.js";
-import type { ModelStats, SuiteStats } from "../stats/aggregate.js";
+import type { ModelStats, SuiteStats, TokenTotals } from "../stats/aggregate.js";
 
 /**
  * Reporte para la terminal (sección 13): una tabla por modelo y, debajo, los casos que
@@ -16,6 +16,14 @@ export interface TerminalOptions {
 
 const nf = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 });
 const int = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0, useGrouping: "always" });
+
+/** Mínimo de tokens para que un prefijo se cachee (verificado en la documentación, nov. 2026). */
+const MIN_CACHE_HINT = "512 tokens en los modelos 5.5";
+
+export const formatCache = (t: TokenTotals): string =>
+  t.cacheRead === 0 && t.cacheWrite === 0
+    ? "—"
+    : `${formatInt(t.cacheRead)} / ${formatInt(t.cacheWrite)}`;
 
 export const formatPercent = (rate: number): string => `${nf.format(rate * 100)} %`;
 export const formatInt = (n: number): string => int.format(n);
@@ -44,6 +52,7 @@ function modelRow(m: ModelStats, c: ReturnType<typeof pc.createColors>): string[
     m.flakyCases.length === 0 ? "0" : c.yellow(String(m.flakyCases.length)),
     m.errors === 0 ? "0" : c.red(String(m.errors)),
     `${formatInt(m.tokens.input)} / ${formatInt(m.tokens.output)}`,
+    formatCache(m.tokens),
     m.latency === null ? "—" : `${formatInt(m.latency.p50)} / ${formatInt(m.latency.p95)} ms`,
   ];
 }
@@ -67,6 +76,7 @@ export function renderTerminalReport(
       "Inestables",
       "Errores",
       "Tokens (ent/sal)",
+      "Caché (lect/escr)",
       "Latencia p50/p95",
     ],
     style: { head: [], border: [] },
@@ -74,6 +84,35 @@ export function renderTerminalReport(
   for (const m of stats.models) table.push(modelRow(m, c));
   lines.push(table.toString());
   lines.push(c.dim(`Umbral de aprobación: ${formatPercent(result.thresholds.pass_rate)}`));
+
+  if (stats.judge) {
+    const j = stats.judge;
+    lines.push(
+      c.dim(
+        `Juez (${j.models.join(", ")}): ${j.calls} evaluación(es) · tokens ` +
+          `${formatInt(j.tokens.input)} / ${formatInt(j.tokens.output)} · caché ${formatCache(j.tokens)}`,
+      ),
+    );
+  }
+
+  const unused = stats.models.filter((m) => m.cacheUnused).map((m) => m.model);
+  if (unused.length > 0) {
+    lines.push(
+      c.yellow(
+        `⚠ cache_system está activo pero no se cacheó nada en ${unused.join(", ")}: ` +
+          `el system prompt probablemente es más corto que el mínimo cacheable del modelo ` +
+          `(${MIN_CACHE_HINT}).`,
+      ),
+    );
+  }
+  if (stats.judge?.cacheUnused === true) {
+    lines.push(
+      c.yellow(
+        `⚠ El prefijo del juez no se cacheó: instrucciones + system + rúbrica quedan por debajo ` +
+          `del mínimo cacheable (${MIN_CACHE_HINT}).`,
+      ),
+    );
+  }
 
   // Casos con algún trial no aprobado, agrupados por caso × modelo.
   const failing = stats.cases.filter((cs) => cs.passed < cs.executed);

@@ -62,6 +62,18 @@ thresholds:
 - **Caso inestable**: aprueba en unos trials y falla en otros; suele indicar un prompt ambiguo.
 - La suite aprueba si todos sus modelos llegan a `thresholds.pass_rate`.
 
+### Prompt caching
+
+Con `defaults.cache_system: true`, el system prompt se envía marcado como cacheable; el juez LLM
+cachea siempre sus instrucciones y la rúbrica. Dos detalles que promptcheck resuelve por ti:
+
+- **Peticiones en paralelo:** una entrada de caché solo se puede leer cuando la primera respuesta
+  que la escribe empezó a llegar. Por eso el primer trial de cada prefijo (modelo + `effort` +
+  system) corre solo y los demás de ese prefijo esperan; sin eso, todos pagarían la escritura.
+- **Mínimo cacheable:** un prefijo más corto que el mínimo del modelo (512 tokens en los modelos
+  5.5) no se cachea, sin error. El reporte muestra la columna _Caché (lect/escr)_ y avisa si
+  `cache_system` estaba activo y no se cacheó nada.
+
 ### Códigos de salida
 
 | Código | Significado                                                                |

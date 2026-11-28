@@ -31,11 +31,17 @@ export function trial(
   };
 }
 
-const suite = (results: TrialResult[], pass_rate = 0.9, aborted?: SuiteResult["aborted"]) =>
+const suite = (
+  results: TrialResult[],
+  pass_rate = 0.9,
+  aborted?: SuiteResult["aborted"],
+  cacheSystem = false,
+) =>
   ({
     name: "S",
     file: "s.yaml",
     thresholds: { pass_rate, max_regression: 0.05 },
+    cacheSystem,
     results,
     ...(aborted ? { aborted } : {}),
   }) satisfies SuiteResult;
@@ -165,5 +171,66 @@ describe("aggregate", () => {
 
   it("una suite sin resultados no aprueba", () => {
     expect(aggregate(suite([])).pass).toBe(false);
+  });
+});
+
+describe("métricas de caché y del juez", () => {
+  const noCache = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 };
+  const withUsage = (usage: typeof noCache) =>
+    trial("a", "m", true, {
+      completion: { text: "x", stopReason: "end_turn", model: "m", latencyMs: 1, usage },
+    });
+
+  it("avisa si la suite pidió caché y no se cacheó nada", () => {
+    expect(
+      aggregate(suite([withUsage(noCache)], 0.9, undefined, true)).models[0]?.cacheUnused,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["hubo lecturas", { ...noCache, cacheRead: 600 }, true],
+    ["hubo escrituras", { ...noCache, cacheWrite: 600 }, true],
+    ["la suite no pidió caché", noCache, false],
+  ])("no avisa si %s", (_name, usage, cacheSystem) => {
+    expect(
+      aggregate(suite([withUsage(usage)], 0.9, undefined, cacheSystem)).models[0]?.cacheUnused,
+    ).toBe(false);
+  });
+
+  it("no avisa si no hubo trials completados", () => {
+    const skipped = trial("a", "m", false, { status: "skipped", completion: null });
+    expect(aggregate(suite([skipped], 0.9, undefined, true)).models[0]?.cacheUnused).toBe(false);
+  });
+
+  it("suma las llamadas al juez aparte de los tokens del prompt", () => {
+    const judged = (cacheRead: number) =>
+      trial("a", "m", true, {
+        grades: [
+          { pass: true, score: 1, reason: "ok" },
+          {
+            pass: true,
+            score: 0.9,
+            reason: "juez",
+            judge: {
+              model: "claude-opus-5-5",
+              latencyMs: 5,
+              usage: { input: 100, output: 20, cacheRead, cacheWrite: 0 },
+            },
+          },
+        ],
+      });
+    const stats = aggregate(suite([judged(0), judged(700), judged(700)]));
+    expect(stats.judge).toEqual({
+      models: ["claude-opus-5-5"],
+      calls: 3,
+      tokens: { input: 300, output: 60, cacheRead: 1400, cacheWrite: 0 },
+      cacheUnused: false,
+    });
+    expect(stats.models[0]?.tokens.input).toBe(30);
+    expect(aggregate(suite([judged(0)])).judge?.cacheUnused).toBe(true);
+  });
+
+  it("sin juez, judge es null", () => {
+    expect(aggregate(suite([trial("a", "m", true)])).judge).toBeNull();
   });
 });

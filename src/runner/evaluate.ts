@@ -7,6 +7,7 @@ import type { PlanOptions } from "../planner/plan.js";
 import type { CompletionResult, Provider } from "../providers/provider.js";
 import { DEFAULT_CONCURRENCY, runTrials } from "./run.js";
 import type { TrialError, TrialRun } from "./run.js";
+import { mapWithWarmup } from "./warmup.js";
 
 /**
  * Corre una suite completa: plan → runner → calificadores. Devuelve un resultado por trial,
@@ -35,6 +36,8 @@ export interface SuiteResult {
   name: string;
   file: string;
   thresholds: Thresholds;
+  /** Si la suite pidió prompt caching del system (para avisar cuando no tuvo efecto). */
+  cacheSystem: boolean;
   results: TrialResult[];
   /** Presente si la corrida se cortó por un error fatal del proveedor. */
   aborted?: TrialError;
@@ -120,11 +123,20 @@ export async function evaluateSuite(
           ...(suite.judge.effort === undefined ? {} : { effort: suite.judge.effort }),
         };
   const limit = pLimit(options.concurrency ?? DEFAULT_CONCURRENCY);
-  const results = await Promise.all(runs.map((run) => limit(() => toResult(run, judge))));
+  // El prefijo del juez (instrucciones + system evaluado + rúbrica) es el mismo para todos los
+  // trials de un caso: el primero de cada caso se califica solo, para que el resto lea la caché.
+  const judgeGroup = (run: TrialRun): string | undefined =>
+    judge !== undefined &&
+    run.status === "completed" &&
+    run.trial.assertions.some((a) => a.type === "llm_judge")
+      ? run.trial.caseId
+      : undefined;
+  const results = await mapWithWarmup(runs, limit, judgeGroup, (run) => toResult(run, judge));
   return {
     name: suite.name,
     file,
     thresholds: suite.thresholds,
+    cacheSystem: suite.defaults.cache_system,
     results,
     ...(aborted === undefined ? {} : { aborted }),
   };

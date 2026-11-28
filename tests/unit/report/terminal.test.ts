@@ -43,6 +43,7 @@ const result = (results: TrialResult[], extra: Partial<SuiteResult> = {}): Suite
   name: "Clasificación de tickets",
   file: "evals/tickets.yaml",
   thresholds: { pass_rate: 0.9, max_regression: 0.05 },
+  cacheSystem: false,
   results,
   ...extra,
 });
@@ -114,16 +115,16 @@ describe("renderTerminalReport", () => {
   it("suite aprobada", () => {
     expect(render(result([t("a", "claude-opus-5-5", 1, true), t("b", "claude-opus-5-5", 2, true)])))
       .toMatchInlineSnapshot(`
-      "Clasificación de tickets  evals/tickets.yaml
-      ┌─────────────────┬────────────┬────────┬────────────┬─────────┬──────────────────┬──────────────────┐
-      │ Modelo          │ Aprobación │ Trials │ Inestables │ Errores │ Tokens (ent/sal) │ Latencia p50/p95 │
-      ├─────────────────┼────────────┼────────┼────────────┼─────────┼──────────────────┼──────────────────┤
-      │ claude-opus-5-5 │ 100 % ✔    │ 2/2    │ 0          │ 0       │ 2.400 / 600      │ 600 / 700 ms     │
-      └─────────────────┴────────────┴────────┴────────────┴─────────┴──────────────────┴──────────────────┘
-      Umbral de aprobación: 90 %
+        "Clasificación de tickets  evals/tickets.yaml
+        ┌─────────────────┬────────────┬────────┬────────────┬─────────┬──────────────────┬───────────────────┬──────────────────┐
+        │ Modelo          │ Aprobación │ Trials │ Inestables │ Errores │ Tokens (ent/sal) │ Caché (lect/escr) │ Latencia p50/p95 │
+        ├─────────────────┼────────────┼────────┼────────────┼─────────┼──────────────────┼───────────────────┼──────────────────┤
+        │ claude-opus-5-5 │ 100 % ✔    │ 2/2    │ 0          │ 0       │ 2.400 / 600      │ —                 │ 600 / 700 ms     │
+        └─────────────────┴────────────┴────────┴────────────┴─────────┴──────────────────┴───────────────────┴──────────────────┘
+        Umbral de aprobación: 90 %
 
-      ✔ Suite aprobada"
-    `);
+        ✔ Suite aprobada"
+      `);
   });
 
   it("suite con un caso inestable, un caso roto y un error", () => {
@@ -149,13 +150,13 @@ describe("renderTerminalReport", () => {
     ]);
     expect(render(r)).toMatchInlineSnapshot(`
       "Clasificación de tickets  evals/tickets.yaml
-      ┌──────────────────┬────────────┬────────┬────────────┬─────────┬──────────────────┬──────────────────┐
-      │ Modelo           │ Aprobación │ Trials │ Inestables │ Errores │ Tokens (ent/sal) │ Latencia p50/p95 │
-      ├──────────────────┼────────────┼────────┼────────────┼─────────┼──────────────────┼──────────────────┤
-      │ claude-opus-5-5  │ 100 % ✔    │ 4/4    │ 0          │ 0       │ 4.800 / 1.200    │ 600 / 700 ms     │
-      ├──────────────────┼────────────┼────────┼────────────┼─────────┼──────────────────┼──────────────────┤
-      │ claude-haiku-5-5 │ 25 % ✘     │ 1/4    │ 1          │ 1       │ 3.600 / 900      │ 600 / 700 ms     │
-      └──────────────────┴────────────┴────────┴────────────┴─────────┴──────────────────┴──────────────────┘
+      ┌──────────────────┬────────────┬────────┬────────────┬─────────┬──────────────────┬───────────────────┬──────────────────┐
+      │ Modelo           │ Aprobación │ Trials │ Inestables │ Errores │ Tokens (ent/sal) │ Caché (lect/escr) │ Latencia p50/p95 │
+      ├──────────────────┼────────────┼────────┼────────────┼─────────┼──────────────────┼───────────────────┼──────────────────┤
+      │ claude-opus-5-5  │ 100 % ✔    │ 4/4    │ 0          │ 0       │ 4.800 / 1.200    │ —                 │ 600 / 700 ms     │
+      ├──────────────────┼────────────┼────────┼────────────┼─────────┼──────────────────┼───────────────────┼──────────────────┤
+      │ claude-haiku-5-5 │ 25 % ✘     │ 1/4    │ 1          │ 1       │ 3.600 / 900      │ —                 │ 600 / 700 ms     │
+      └──────────────────┴────────────┴────────┴────────────┴─────────┴──────────────────┴───────────────────┴──────────────────┘
       Umbral de aprobación: 90 %
 
       Casos con fallos:
@@ -201,5 +202,47 @@ describe("renderTerminalReport", () => {
     const ESC = "\u001b[";
     expect(renderTerminalReport(r, aggregate(r), { color: true })).toContain(ESC);
     expect(render(r)).not.toContain(ESC);
+  });
+});
+
+describe("caché y juez en el reporte", () => {
+  const withCache = (cacheRead: number, cacheWrite: number) =>
+    t("a", "claude-haiku-5-5", 1, true, {
+      completion: { ...completion(500), usage: { input: 100, output: 50, cacheRead, cacheWrite } },
+    });
+
+  it("muestra lecturas y escrituras de caché, o — si no hubo", () => {
+    expect(render(result([withCache(1200, 300)]))).toContain("1.200 / 300");
+    expect(render(result([withCache(0, 0)]))).toMatch(/│ — +│ 500 \/ 500 ms/);
+  });
+
+  it("avisa cuando cache_system no tuvo efecto", () => {
+    const out = render({ ...result([withCache(0, 0)]), cacheSystem: true });
+    expect(out).toContain(
+      "⚠ cache_system está activo pero no se cacheó nada en claude-haiku-5-5: el system prompt probablemente es más corto que el mínimo cacheable del modelo (512 tokens en los modelos 5.5).",
+    );
+    expect(render({ ...result([withCache(600, 0)]), cacheSystem: true })).not.toContain("⚠");
+  });
+
+  it("resume el consumo del juez y avisa si su prefijo no se cacheó", () => {
+    const judged = (cacheRead: number) =>
+      t("a", "m", 1, true, {
+        grades: [
+          {
+            pass: true,
+            score: 1,
+            reason: "juez",
+            judge: {
+              model: "claude-opus-5-5",
+              latencyMs: 1,
+              usage: { input: 1000, output: 80, cacheRead, cacheWrite: 0 },
+            },
+          },
+        ],
+      });
+    expect(render(result([judged(700)]))).toContain(
+      "Juez (claude-opus-5-5): 1 evaluación(es) · tokens 1.000 / 80 · caché 700 / 0",
+    );
+    expect(render(result([judged(0)]))).toContain("⚠ El prefijo del juez no se cacheó");
   });
 });

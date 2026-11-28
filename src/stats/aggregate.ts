@@ -1,3 +1,4 @@
+import type { Usage } from "../providers/provider.js";
 import type { SuiteResult, TrialResult } from "../runner/evaluate.js";
 
 /**
@@ -9,6 +10,7 @@ import type { SuiteResult, TrialResult } from "../runner/evaluate.js";
  *   tenga los trials que tenga.
  * - Caso inestable (flaky): aprueba en unos trials y falla en otros.
  * - Un modelo cumple si su tasa es ≥ `thresholds.pass_rate`; la suite aprueba si cumplen todos.
+ * - Los tokens del juez se cuentan aparte de los del prompt evaluado ("costo de evaluación").
  */
 
 export interface CaseStats {
@@ -41,12 +43,56 @@ export interface ModelStats {
   failingCases: string[];
   latency: { p50: number; p95: number } | null;
   tokens: TokenTotals;
+  /**
+   * La suite pidió prompt caching pero ningún trial leyó ni escribió caché: casi siempre el
+   * system está por debajo del mínimo cacheable del modelo (512 tokens en los modelos 5.5).
+   */
+  cacheUnused: boolean;
+}
+
+export interface JudgeStats {
+  /** Modelos que respondieron como juez (normalmente uno). */
+  models: string[];
+  calls: number;
+  tokens: TokenTotals;
+  /** Ninguna llamada al juez leyó ni escribió caché (prefijo por debajo del mínimo). */
+  cacheUnused: boolean;
 }
 
 export interface SuiteStats {
   models: ModelStats[];
   cases: CaseStats[];
+  /** `null` si ningún trial se calificó con el juez. */
+  judge: JudgeStats | null;
   pass: boolean;
+}
+
+const emptyTokens = (): TokenTotals => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+
+export function sumUsage(usages: readonly Usage[]): TokenTotals {
+  return usages.reduce<TokenTotals>(
+    (acc, u) => ({
+      input: acc.input + u.input,
+      output: acc.output + u.output,
+      cacheRead: acc.cacheRead + u.cacheRead,
+      cacheWrite: acc.cacheWrite + u.cacheWrite,
+    }),
+    emptyTokens(),
+  );
+}
+
+const noCacheActivity = (t: TokenTotals): boolean => t.cacheRead === 0 && t.cacheWrite === 0;
+
+function judgeStats(results: readonly TrialResult[]): JudgeStats | null {
+  const calls = results.flatMap((t) => t.grades.flatMap((g) => (g.judge ? [g.judge] : [])));
+  if (calls.length === 0) return null;
+  const tokens = sumUsage(calls.map((c) => c.usage));
+  return {
+    models: [...new Set(calls.map((c) => c.model))],
+    calls: calls.length,
+    tokens,
+    cacheUnused: noCacheActivity(tokens),
+  };
 }
 
 /** Percentil por el método del rango más cercano: siempre devuelve un valor observado. */
@@ -99,15 +145,7 @@ export function aggregate(result: SuiteResult): SuiteStats {
     const passRate = ran.length === 0 ? null : mean(ran.map((c) => c.rate));
     const completions = trials.flatMap((t) => (t.completion ? [t.completion] : []));
     const latencies = completions.map((c) => c.latencyMs);
-    const tokens = completions.reduce<TokenTotals>(
-      (acc, c) => ({
-        input: acc.input + c.usage.input,
-        output: acc.output + c.usage.output,
-        cacheRead: acc.cacheRead + c.usage.cacheRead,
-        cacheWrite: acc.cacheWrite + c.usage.cacheWrite,
-      }),
-      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    );
+    const tokens = sumUsage(completions.map((c) => c.usage));
 
     models.push({
       model,
@@ -124,12 +162,14 @@ export function aggregate(result: SuiteResult): SuiteStats {
           ? null
           : { p50: percentile(latencies, 50), p95: percentile(latencies, 95) },
       tokens,
+      cacheUnused: result.cacheSystem && completions.length > 0 && noCacheActivity(tokens),
     });
   }
 
   return {
     models,
     cases,
+    judge: judgeStats(result.results),
     pass:
       result.aborted === undefined && models.length > 0 && models.every((m) => m.meetsThreshold),
   };
